@@ -1,15 +1,12 @@
 # app.py
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any
-import importlib.util
-import sys
+import speech_recognition as sr
+import io
+import tempfile
 import os
-import threading
-
-# Add current directory to Python path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI()
 
@@ -24,26 +21,17 @@ app.add_middleware(
 
 # Import your existing functions from separate modules
 try:
-    # Import STT function from stt_live
-    from stt_live import transcribe_once, transcribe_with_control
-    
     # Import NLU functions from the new module
     from nlu_service import extract_event
     
     # Import calendar functions from calendar_booker
     from calendar_booker import create_event, query_conflicts
     
-    print("✅ Successfully imported all backend modules")
+    print("✅ Successfully imported NLU and calendar modules")
     
 except ImportError as e:
     print(f"❌ Import error: {e}")
     # Fallback to simulating the functions
-    def transcribe_once():
-        return "Simulated transcript: Meeting with team tomorrow at 2 PM"
-    
-    def transcribe_with_control():
-        return "Simulated controlled transcript: Meeting with team tomorrow at 2 PM"
-    
     def extract_event(utterance):
         return {
             "intent": "CreateEvent",
@@ -61,19 +49,6 @@ except ImportError as e:
     def query_conflicts(start, end):
         return []
 
-class EventRequest(BaseModel):
-    utterance: str
-
-class VoiceResponse(BaseModel):
-    success: bool
-    transcript: str = None
-    error: str = None
-
-class EventResponse(BaseModel):
-    success: bool
-    event: Dict[str, Any] = None
-    error: str = None
-
 @app.get("/")
 async def root():
     return {"message": "VoiceCalendar AI Backend is running!"}
@@ -82,19 +57,38 @@ async def root():
 async def health_check():
     return {
         "status": "healthy", 
-        "service": "VoiceCalendar AI Backend",
-        "modules_loaded": "extract_event" in globals()
+        "service": "VoiceCalendar AI Backend"
     }
 
-@app.post("/process-voice")
-async def process_voice_command():
-    """Use your existing stt_live.py to transcribe audio"""
+@app.post("/process-audio")
+async def process_audio_file(audio: UploadFile = File(...)):
+    """Process audio file from frontend"""
     try:
-        # Use the new controllable function
-        transcript = transcribe_with_control()
+        # Save audio to temporary file
+        audio_data = await audio.read()
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+            tmp_file.write(audio_data)
+            tmp_file_path = tmp_file.name
+        
+        # Transcribe audio using speech_recognition
+        recognizer = sr.Recognizer()
+        
+        with sr.AudioFile(tmp_file_path) as source:
+            audio_content = recognizer.record(source)
+            transcript = recognizer.recognize_google(audio_content)
+        
+        # Clean up temporary file
+        os.unlink(tmp_file_path)
+        
         return {"success": True, "transcript": transcript}
+        
+    except sr.UnknownValueError:
+        return {"success": False, "error": "Could not understand audio"}
+    except sr.RequestError as e:
+        return {"success": False, "error": f"Speech recognition error: {e}"}
     except Exception as e:
-        return {"success": False, "error": str(e), "transcript": None}
+        return {"success": False, "error": str(e)}
 
 @app.post("/process-text")
 async def process_text_command(request: Request):

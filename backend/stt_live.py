@@ -1,5 +1,4 @@
-# Add this function to your stt_live.py
-def transcribe_with_control(stop_event=None):
+def transcribe_with_control():
     """
     Modified version that can be stopped externally
     """
@@ -33,10 +32,6 @@ def transcribe_with_control(stop_event=None):
             max_silence = 15  # Stop after 3 seconds of silence (15 * 200ms)
             
             for resp in responses:
-                # Check if we should stop externally
-                if stop_event and stop_event.is_set():
-                    break
-                    
                 for result in resp.results:
                     if not result.alternatives:
                         continue
