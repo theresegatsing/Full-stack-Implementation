@@ -6,6 +6,7 @@ from typing import Dict, Any
 import importlib.util
 import sys
 import os
+import threading
 
 # Add current directory to Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -24,7 +25,7 @@ app.add_middleware(
 # Import your existing functions from separate modules
 try:
     # Import STT function from stt_live
-    from stt_live import transcribe_once
+    from stt_live import transcribe_once, transcribe_with_control
     
     # Import NLU functions from the new module
     from nlu_service import extract_event
@@ -39,6 +40,9 @@ except ImportError as e:
     # Fallback to simulating the functions
     def transcribe_once():
         return "Simulated transcript: Meeting with team tomorrow at 2 PM"
+    
+    def transcribe_with_control():
+        return "Simulated controlled transcript: Meeting with team tomorrow at 2 PM"
     
     def extract_event(utterance):
         return {
@@ -86,7 +90,8 @@ async def health_check():
 async def process_voice_command():
     """Use your existing stt_live.py to transcribe audio"""
     try:
-        transcript = transcribe_once()
+        # Use the new controllable function
+        transcript = transcribe_with_control()
         return {"success": True, "transcript": transcript}
     except Exception as e:
         return {"success": False, "error": str(e), "transcript": None}
