@@ -1,66 +1,85 @@
-import React, { useState, useRef } from 'react'
-import { Mic, Square, Loader2 } from 'lucide-react'
+import React, { useState } from 'react'
+import { Mic, Loader2, Keyboard } from 'lucide-react'
 
 const VoiceRecorder = ({ onNewEvent, isLoading, setIsLoading, transcript, setTranscript }) => {
   const [isRecording, setIsRecording] = useState(false)
-  const mediaRecorderRef = useRef(null)
-  const audioChunksRef = useRef([])
 
-  const startRecording = async () => {
+  const processVoiceCommand = async () => {
+    setIsLoading(true)
+    setIsRecording(true)
+    setTranscript('Recording... Speak now!')
+    
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const mediaRecorder = new MediaRecorder(stream)
-      mediaRecorderRef.current = mediaRecorder
-      audioChunksRef.current = []
-
-      mediaRecorder.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data)
+      // Call your backend's voice endpoint
+      const response = await fetch('http://localhost:8000/process-voice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+      
+      const result = await response.json()
+      
+      if (result.success) {
+        setTranscript(result.transcript)
+        // Now process the transcript through NLU
+        await processTextCommand(result.transcript)
+      } else {
+        setTranscript(`Error: ${result.error}`)
       }
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' })
-        await sendAudioToBackend(audioBlob)
-      }
-
-      mediaRecorder.start()
-      setIsRecording(true)
-      setTranscript('Listening... Speak now!')
     } catch (error) {
-      console.error('Error starting recording:', error)
-      setTranscript('Microphone access denied. Please allow microphone permissions.')
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop()
-      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop())
+      console.error('Voice processing error:', error)
+      setTranscript('Connection error. Please check backend.')
+    } finally {
+      setIsLoading(false)
       setIsRecording(false)
     }
   }
 
-  const sendAudioToBackend = async (audioBlob) => {
-    setIsLoading(true)
+  const processTextCommand = async (text) => {
     try {
-      // For now, we'll simulate the backend response
-      // In the next step, we'll connect to your actual backend
-      setTimeout(() => {
-        const sampleEvent = {
-          title: "Team Meeting",
-          start: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-          end: new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString(),
-          duration_minutes: 60,
-          attendees: ["team@example.com"]
-        }
-        
-        setTranscript("Meeting with team tomorrow at 2 PM for 1 hour")
-        onNewEvent(sampleEvent)
-        setIsLoading(false)
-      }, 2000)
+      const response = await fetch('http://localhost:8000/process-text', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ utterance: text }),
+      })
+
+      const result = await response.json()
       
+      if (result.success) {
+        // Now create the calendar event
+        const calendarResponse = await fetch('http://localhost:8000/create-event', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(result.event),
+        })
+        
+        const calendarResult = await calendarResponse.json()
+        
+        if (calendarResult.success) {
+          onNewEvent(calendarResult.event)
+        } else {
+          setTranscript(`Calendar error: ${calendarResult.error}`)
+        }
+      } else {
+        setTranscript(`NLU error: ${result.error}`)
+      }
     } catch (error) {
-      console.error('Error sending audio:', error)
-      setTranscript('Connection error. Please check if backend is running.')
+      console.error('Text processing error:', error)
+      setTranscript('Connection error. Please check backend.')
+    }
+  }
+
+  const handleTextInput = async () => {
+    const text = prompt('Enter your calendar command:')
+    if (text) {
+      setIsLoading(true)
+      setTranscript(`Processing: ${text}`)
+      await processTextCommand(text)
       setIsLoading(false)
     }
   }
@@ -70,9 +89,9 @@ const VoiceRecorder = ({ onNewEvent, isLoading, setIsLoading, transcript, setTra
       <h2 className="text-2xl font-bold text-gray-800 mb-4">🎤 Voice Command</h2>
       
       <div className="space-y-4">
-        {/* Recording Button */}
+        {/* Real Voice Button - connects to your stt_live.py */}
         <button
-          onClick={isRecording ? stopRecording : startRecording}
+          onClick={processVoiceCommand}
           disabled={isLoading}
           className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-200 ${
             isRecording
@@ -84,33 +103,34 @@ const VoiceRecorder = ({ onNewEvent, isLoading, setIsLoading, transcript, setTra
             {isLoading ? (
               <Loader2 className="w-6 h-6 animate-spin" />
             ) : isRecording ? (
-              <Square className="w-6 h-6" />
+              <div className="flex space-x-1">
+                {[1, 2, 3].map((i) => (
+                  <div key={i} className="w-2 h-6 bg-white rounded-full animate-pulse" />
+                ))}
+              </div>
             ) : (
               <Mic className="w-6 h-6" />
             )}
             <span>
-              {isLoading ? 'Processing...' : isRecording ? 'Stop Recording' : 'Start Recording'}
+              {isLoading ? 'Processing...' : isRecording ? 'Listening...' : 'Start Voice Recording'}
             </span>
           </div>
         </button>
 
-        {/* Voice Visualization */}
-        {isRecording && (
-          <div className="flex items-center justify-center space-x-1">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-8 bg-blue-400 rounded-full animate-pulse"
-                style={{ animationDelay: `${i * 0.1}s` }}
-              />
-            ))}
-          </div>
-        )}
+        {/* Text Input Fallback */}
+        <button
+          onClick={handleTextInput}
+          disabled={isLoading}
+          className="w-full py-3 px-6 bg-green-500 text-white rounded-xl font-semibold hover:bg-green-600 transition-all duration-200 flex items-center justify-center space-x-2"
+        >
+          <Keyboard className="w-5 h-5" />
+          <span>Type Command Instead</span>
+        </button>
 
         {/* Transcript Display */}
         {transcript && (
           <div className="p-4 bg-gray-50 rounded-lg">
-            <h3 className="font-semibold text-gray-700 mb-2">Transcript:</h3>
+            <h3 className="font-semibold text-gray-700 mb-2">Status:</h3>
             <p className="text-gray-600">{transcript}</p>
           </div>
         )}
