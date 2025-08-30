@@ -190,6 +190,16 @@ def extract_event(utterance: str) -> Dict[str, Any]:
     Main extraction function with AI and fallback
     """
     try:
+        # First check if Ollama is running
+        try:
+            health_response = requests.get(f"{OLLAMA_HOST}/api/tags", timeout=5)
+            if health_response.status_code != 200:
+                logger.warning("Ollama is not running, using fallback")
+                return extract_event_fallback(utterance)
+        except requests.exceptions.RequestException:
+            logger.warning("Ollama is not available, using fallback")
+            return extract_event_fallback(utterance)
+        
         current_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         current_year = datetime.now().year
         
@@ -202,6 +212,8 @@ def extract_event(utterance: str) -> Dict[str, Any]:
         3. If user says "1 hour", duration_minutes must be EXACTLY 60
         4. timezone should always be "America/New_York"
         5. For intent, use ONLY: CreateEvent
+        6. MUST include both start AND end times
+        7. End time must be after start time
         
         Example: "45 minutes meeting" → "duration_minutes": 45
         Example: "1 hour meeting" → "duration_minutes": 60"""
@@ -216,11 +228,16 @@ def extract_event(utterance: str) -> Dict[str, Any]:
                 "format": "json",
                 "options": {"temperature": 0.1}
             },
-            timeout=10
+            timeout=30  # Increased timeout
         )
         
         result = response.json()
         event_data = json.loads(result["response"])
+        
+        # Validate that we have both start and end times
+        if "start" not in event_data or "end" not in event_data:
+            logger.warning("Ollama response missing start/end times, using fallback")
+            return extract_event_fallback(utterance)
         
         # Force current year and fix duration
         if "start" in event_data and event_data["start"] and "2025" in event_data["start"]:

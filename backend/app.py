@@ -3,10 +3,13 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, Any
-import speech_recognition as sr
 import io
 import tempfile
 import os
+
+# Add current directory to Python path
+import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI()
 
@@ -21,17 +24,23 @@ app.add_middleware(
 
 # Import your existing functions from separate modules
 try:
+    # Import Google Speech-to-Text function
+    from stt_live import transcribe_audio_file
+    
     # Import NLU functions from the new module
     from nlu_service import extract_event
     
     # Import calendar functions from calendar_booker
     from calendar_booker import create_event, query_conflicts
     
-    print("✅ Successfully imported NLU and calendar modules")
+    print("✅ Successfully imported all backend modules")
     
 except ImportError as e:
     print(f"❌ Import error: {e}")
     # Fallback to simulating the functions
+    def transcribe_audio_file(audio_path):
+        return "Simulated transcript: Meeting with team tomorrow at 2 PM"
+    
     def extract_event(utterance):
         return {
             "intent": "CreateEvent",
@@ -62,32 +71,32 @@ async def health_check():
 
 @app.post("/process-audio")
 async def process_audio_file(audio: UploadFile = File(...)):
-    """Process audio file from frontend"""
+    """Process audio file from frontend using Google Speech-to-Text"""
     try:
+        print(f"🎯 Received audio file: {audio.filename}")
+        
         # Save audio to temporary file
         audio_data = await audio.read()
+        print(f"📊 Audio data size: {len(audio_data)} bytes")
         
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
             tmp_file.write(audio_data)
             tmp_file_path = tmp_file.name
         
-        # Transcribe audio using speech_recognition
-        recognizer = sr.Recognizer()
+        print(f"💾 Saved temporary file: {tmp_file_path}")
         
-        with sr.AudioFile(tmp_file_path) as source:
-            audio_content = recognizer.record(source)
-            transcript = recognizer.recognize_google(audio_content)
+        # Transcribe using your existing Google Speech-to-Text setup
+        transcript = transcribe_audio_file(tmp_file_path)
+        print(f"📝 Transcript: {transcript}")
         
         # Clean up temporary file
         os.unlink(tmp_file_path)
+        print("✅ Temporary file cleaned up")
         
         return {"success": True, "transcript": transcript}
         
-    except sr.UnknownValueError:
-        return {"success": False, "error": "Could not understand audio"}
-    except sr.RequestError as e:
-        return {"success": False, "error": f"Speech recognition error: {e}"}
     except Exception as e:
+        print(f"❌ Error in process-audio: {str(e)}")
         return {"success": False, "error": str(e)}
 
 @app.post("/process-text")

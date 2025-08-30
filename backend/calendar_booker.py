@@ -92,22 +92,62 @@ def get_service():
     return build("calendar", "v3", credentials=creds)
 
 def create_event(event_body: Dict[str, Any]) -> Dict[str, Any]:
-    """Create a new calendar event"""
+    """Create a new calendar event with proper validation"""
     try:
         service = get_service()
         
-        # Validate and format datetime strings
-        if "start" in event_body and "dateTime" in event_body["start"]:
-            event_body["start"]["dateTime"] = _ensure_rfc3339_with_tz(event_body["start"]["dateTime"])
+        # Ensure the event body has the correct structure
+        if "start" not in event_body or "end" not in event_body:
+            raise ValueError("Event must have both start and end times")
         
-        if "end" in event_body and "dateTime" in event_body["end"]:
-            event_body["end"]["dateTime"] = _ensure_rfc3339_with_tz(event_body["end"]["dateTime"])
+        # Convert string dates to proper Google Calendar format
+        formatted_event = {
+            "summary": event_body.get("title", "Untitled Event"),
+            "description": event_body.get("description", ""),
+        }
         
-        print(f"Creating event with body: {json.dumps(event_body, indent=2)}")
+        # Handle start time
+        if isinstance(event_body["start"], str):
+            formatted_event["start"] = {
+                "dateTime": _ensure_rfc3339_with_tz(event_body["start"]),
+                "timeZone": DEFAULT_TZ
+            }
+        else:
+            formatted_event["start"] = event_body["start"]
+        
+        # Handle end time - ensure it exists and is valid
+        if isinstance(event_body["end"], str):
+            formatted_event["end"] = {
+                "dateTime": _ensure_rfc3339_with_tz(event_body["end"]),
+                "timeZone": DEFAULT_TZ
+            }
+        elif "end" in event_body:
+            formatted_event["end"] = event_body["end"]
+        else:
+            # Calculate end time if only duration is provided
+            if "duration_minutes" in event_body and "start" in formatted_event:
+                start_time = datetime.datetime.fromisoformat(
+                    formatted_event["start"]["dateTime"].replace('Z', '+00:00')
+                )
+                end_time = start_time + datetime.timedelta(minutes=event_body["duration_minutes"])
+                formatted_event["end"] = {
+                    "dateTime": end_time.isoformat(),
+                    "timeZone": DEFAULT_TZ
+                }
+            else:
+                raise ValueError("Event must have end time or duration")
+        
+        # Add attendees if present
+        if "attendees" in event_body and event_body["attendees"]:
+            formatted_event["attendees"] = [
+                {"email": email} for email in event_body["attendees"] if isinstance(email, str)
+            ]
+        
+        print(f"Creating event with body: {json.dumps(formatted_event, indent=2)}")
         
         event = service.events().insert(
             calendarId=CALENDAR_ID, 
-            body=event_body, 
+            body=formatted_event, 
             sendUpdates="all"
         ).execute()
         
