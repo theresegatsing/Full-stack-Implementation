@@ -6,9 +6,9 @@ from typing import Dict, Any
 import io
 import tempfile
 import os
+import sys
 
 # Add current directory to Python path
-import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 app = FastAPI()
@@ -75,11 +75,20 @@ async def process_audio_file(audio: UploadFile = File(...)):
     try:
         print(f"🎯 Received audio file: {audio.filename}")
         
-        # Save audio to temporary file
+        # Save audio to temporary file with correct extension
         audio_data = await audio.read()
         print(f"📊 Audio data size: {len(audio_data)} bytes")
         
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp_file:
+        # Determine file extension based on content type or filename
+        if audio.filename.endswith('.webm') or audio.content_type == 'audio/webm':
+            file_extension = '.webm'
+        elif audio.filename.endswith('.wav') or audio.content_type == 'audio/wav':
+            file_extension = '.wav'
+        else:
+            # Default to webm since that's what browsers typically record in
+            file_extension = '.webm'
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as tmp_file:
             tmp_file.write(audio_data)
             tmp_file_path = tmp_file.name
         
@@ -89,11 +98,19 @@ async def process_audio_file(audio: UploadFile = File(...)):
         transcript = transcribe_audio_file(tmp_file_path)
         print(f"📝 Transcript: {transcript}")
         
+        # Extract event data from transcript using NLU
+        event_data = extract_event(transcript)
+        print(f"📅 Extracted event data: {event_data}")
+        
         # Clean up temporary file
         os.unlink(tmp_file_path)
         print("✅ Temporary file cleaned up")
         
-        return {"success": True, "transcript": transcript}
+        return {
+            "success": True, 
+            "transcript": transcript,
+            "event": event_data
+        }
         
     except Exception as e:
         print(f"❌ Error in process-audio: {str(e)}")

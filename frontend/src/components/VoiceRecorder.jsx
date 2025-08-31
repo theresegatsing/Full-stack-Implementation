@@ -1,214 +1,248 @@
-import React, { useState, useRef } from 'react'
-import { Mic, Square, Loader2, Keyboard, CheckCircle, XCircle } from 'lucide-react'
+import React, { useState, useRef } from 'react';
 
-const VoiceRecorder = ({ onNewEvent, isLoading, setIsLoading, transcript, setTranscript }) => {
-  const [isRecording, setIsRecording] = useState(false)
-  const [mediaRecorder, setMediaRecorder] = useState(null)
-  const audioChunks = useRef([])
-
-  const startRecording = async () => {
-    try {
-      console.log('🎤 Starting recording...')
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const recorder = new MediaRecorder(stream)
-      
-      recorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.current.push(event.data)
+const VoiceRecorder = ({ onNewEvent, isLoading, setIsLoading, transcript, setTranscript, setNotification, setCurrentView, setCurrentEvent }) => {
+    const [isRecording, setIsRecording] = useState(false);
+    const [showTextInput, setShowTextInput] = useState(false);
+    const [textInput, setTextInput] = useState("");
+    const mediaRecorderRef = useRef(null);
+    const audioChunksRef = useRef([]);
+    
+    // Enhanced speech patterns for better recognition
+    const speechPatterns = [
+        "Schedule meeting with John tomorrow at 3 PM for 1 hour",
+        "Team lunch next Friday at 12:30 for 45 minutes",
+        "Dentist appointment on March 15 at 10 AM",
+        "Conference call with clients Wednesday at 2 PM",
+        "Doctor visit next Tuesday at 11:30 AM for 30 minutes",
+        "Birthday party on Saturday at 4 PM for 2 hours"
+    ];
+    
+    const startRecording = async () => {
+        try {
+            setIsRecording(true);
+            setTranscript("Initializing microphone...");
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    sampleRate: 48000
+                } 
+            });
+            
+            const mediaRecorder = new MediaRecorder(stream, { 
+                mimeType: 'audio/webm; codecs=opus'
+            });
+            
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+            
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+            
+            mediaRecorder.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                await processAudio(audioBlob);
+                stream.getTracks().forEach(track => track.stop());
+            };
+            
+            mediaRecorder.start(1000);
+            setTranscript("Listening... Speak clearly and slowly");
+            
+        } catch (error) {
+            console.error("Error accessing microphone:", error);
+            setNotification({
+                message: "Microphone access denied. Please use text input.",
+                type: "error"
+            });
+            setIsRecording(false);
+            setShowTextInput(true);
         }
-      }
-      
-      recorder.onstop = async () => {
-        console.log('⏹️ Recording stopped, processing audio...')
-        const audioBlob = new Blob(audioChunks.current, { type: 'audio/wav' })
-        await sendAudioToBackend(audioBlob)
-        audioChunks.current = []
-      }
-      
-      setMediaRecorder(recorder)
-      recorder.start()
-      setIsRecording(true)
-      setTranscript('🎤 Recording... Speak now!')
-      
-    } catch (error) {
-      console.error('Error starting recording:', error)
-      setTranscript('❌ Microphone access denied. Please allow permissions.')
-    }
-  }
-
-  const stopRecording = () => {
-    if (mediaRecorder && isRecording) {
-      console.log('🛑 Stopping recording...')
-      mediaRecorder.stop()
-      mediaRecorder.stream.getTracks().forEach(track => track.stop())
-      setIsRecording(false)
-      setTranscript('⏳ Processing your audio...')
-    }
-  }
-
-  const sendAudioToBackend = async (audioBlob) => {
-    setIsLoading(true)
-    try {
-      const formData = new FormData()
-      formData.append('audio', audioBlob, 'recording.wav')
-      
-      console.log('📤 Sending audio to backend...')
-      
-      const response = await fetch('http://localhost:8000/process-audio', {
-        method: 'POST',
-        body: formData,
-      })
-      
-      console.log('📥 Received response from backend')
-      const result = await response.json()
-      console.log('Backend result:', result)
-      
-      if (result.success) {
-        setTranscript(`✅ Heard: ${result.transcript}`)
-        await processTextCommand(result.transcript)
-      } else {
-        setTranscript(`❌ Error: ${result.error}`)
-        console.error('Backend error:', result.error)
-      }
-    } catch (error) {
-      console.error('Error sending audio:', error)
-      setTranscript('🔌 Connection error. Please check backend.')
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const processTextCommand = async (text) => {
-    try {
-      console.log('📨 Sending text to NLU:', text)
-      
-      const response = await fetch('http://localhost:8000/process-text', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ utterance: text }),
-      })
-
-      const result = await response.json()
-      console.log('NLU result:', result)
-      
-      if (result.success) {
-        console.log('📅 Creating calendar event:', result.event)
-        
-        const calendarResponse = await fetch('http://localhost:8000/create-event', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(result.event),
-        })
-        
-        const calendarResult = await calendarResponse.json()
-        console.log('Calendar result:', calendarResult)
-        
-        if (calendarResult.success) {
-          setTranscript(`✅ Event created: ${result.event.title}`)
-          onNewEvent(calendarResult.event)
-        } else {
-          setTranscript(`❌ Calendar error: ${calendarResult.error}`)
-          console.error('Calendar error:', calendarResult.error)
+    };
+    
+    const stopRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.stop();
+            setIsRecording(false);
+            setTranscript("Processing your speech...");
         }
-      } else {
-        setTranscript(`❌ NLU error: ${result.error}`)
-        console.error('NLU error:', result.error)
-      }
-    } catch (error) {
-      console.error('Text processing error:', error)
-      setTranscript('🔌 Connection error. Please check backend.')
-    }
-  }
-
-  const handleTextInput = async () => {
-    const text = prompt('Enter your calendar command:')
-    if (text) {
-      setIsLoading(true)
-      setTranscript(`📝 Processing: ${text}`)
-      await processTextCommand(text)
-      setIsLoading(false)
-    }
-  }
-
-  return (
-    <div className="bg-white rounded-2xl shadow-lg p-6">
-      <h2 className="text-2xl font-bold text-gray-800 mb-4">🎤 Voice Command</h2>
-      
-      <div className="space-y-4">
-        <button
-          onClick={isRecording ? stopRecording : startRecording}
-          disabled={isLoading}
-          className={`w-full py-4 px-6 rounded-xl font-semibold text-white transition-all duration-200 ${
-            isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-blue-500 hover:bg-blue-600'
-          } ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-        >
-          <div className="flex items-center justify-center space-x-2">
-            {isLoading ? (
-              <Loader2 className="w-6 h-6 animate-spin" />
-            ) : isRecording ? (
-              <Square className="w-6 h-6" />
-            ) : (
-              <Mic className="w-6 h-6" />
-            )}
-            <span>
-              {isLoading ? 'Processing...' : isRecording ? 'Stop Recording' : 'Start Recording'}
-            </span>
-          </div>
-        </button>
-
-        <button
-          onClick={handleTextInput}
-          disabled={isLoading}
-          className="w-full py-3 px-6 bg-green-500 text-white rounded-xl font-semibold hover:bg-green-600 transition-all duration-200 flex items-center justify-center space-x-2"
-        >
-          <Keyboard className="w-5 h-5" />
-          <span>Type Command Instead</span>
-        </button>
-
-        {transcript && (
-          <div className={`p-4 rounded-lg ${
-            transcript.includes('✅') ? 'bg-green-50 border border-green-200' :
-            transcript.includes('❌') ? 'bg-red-50 border border-red-200' :
-            'bg-gray-50 border border-gray-200'
-          }`}>
-            <div className="flex items-start space-x-2">
-              {transcript.includes('✅') ? (
-                <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-              ) : transcript.includes('❌') ? (
-                <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
-              ) : (
-                <div className="w-5 h-5 mt-0.5 flex-shrink-0" />
-              )}
-              <div>
-                <h3 className="font-semibold text-gray-700 mb-1">Status:</h3>
-                <p className="text-gray-600">{transcript}</p>
-              </div>
+    };
+    
+    // Enhanced speech processing with better parsing
+    const parseSpeechToEvent = (transcript) => {
+        // Default event structure
+        const event = {
+            title: "Meeting",
+            date: new Date(Date.now() + 24 * 60 * 60 * 1000), // Tomorrow
+            duration: 60,
+            description: "Created from voice command"
+        };
+        
+        // Extract time patterns
+        const timePatterns = [
+            { regex: /at (\d{1,2}):?(\d{2})? ?(AM|PM)/i, handler: (match) => {
+                let hours = parseInt(match[1]);
+                const minutes = match[2] ? parseInt(match[2]) : 0;
+                const period = match[3].toUpperCase();
+                
+                if (period === 'PM' && hours < 12) hours += 12;
+                if (period === 'AM' && hours === 12) hours = 0;
+                
+                return { hours, minutes };
+            }},
+            { regex: /at (\d{1,2}) ?(AM|PM)/i, handler: (match) => {
+                let hours = parseInt(match[1]);
+                const period = match[2].toUpperCase();
+                
+                if (period === 'PM' && hours < 12) hours += 12;
+                if (period === 'AM' && hours === 12) hours = 0;
+                
+                return { hours, minutes: 0 };
+            }}
+        ];
+        
+        // Extract duration
+        const durationMatch = transcript.match(/(\d+)\s*(minute|hour)/i);
+        if (durationMatch) {
+            const value = parseInt(durationMatch[1]);
+            event.duration = durationMatch[2].toLowerCase() === 'hour' ? value * 60 : value;
+        }
+        
+        // Extract date references
+        if (transcript.toLowerCase().includes('tomorrow')) {
+            event.date.setDate(event.date.getDate() + 1);
+        } else if (transcript.toLowerCase().includes('next week')) {
+            event.date.setDate(event.date.getDate() + 7);
+        }
+        
+        // Set title from transcript
+        event.title = transcript.length > 30 ? transcript.substring(0, 30) + "..." : transcript;
+        event.description = transcript;
+        
+        return event;
+    };
+    
+    const processAudio = async (audioBlob) => {
+        setIsLoading(true);
+        
+        try {
+            const formData = new FormData();
+            formData.append("audio", audioBlob, "recording.webm");
+            
+            const response = await fetch("http://localhost:8000/process-audio", {
+                method: "POST",
+                body: formData,
+            });
+            
+            if (!response.ok) {
+                throw new Error(`Server error: ${response.status}`);
+            }
+            
+            const result = await response.json();
+            console.log("Backend response:", result); // DEBUG
+            
+            if (result.success) {
+                // Use the event data from the backend, not parsed on frontend
+                console.log("Event data from backend:", result.event); // DEBUG
+                setCurrentEvent(result.event);
+                setCurrentView('confirmation');
+                setTranscript(result.transcript);
+            } else {
+                throw new Error(result.error || "Speech recognition failed");
+            }
+        } catch (error) {
+            console.error("Error processing audio:", error);
+            setNotification({
+                message: error.message,
+                type: "error"
+            });
+            setTranscript("❌ Error: " + error.message);
+            setShowTextInput(true);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    
+    const handleTextSubmit = () => {
+        if (textInput.trim()) {
+            // For text input, we need to parse it since we're not calling the backend
+            const event = parseSpeechToEvent(textInput);
+            setCurrentEvent(event);
+            setCurrentView('confirmation');
+            setTextInput("");
+            setShowTextInput(false);
+        }
+    };
+    
+    return (
+        <div className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold mb-4">🎤 Voice Command</h2>
+            
+            <div className="flex flex-col items-center">
+                <button
+                    onClick={isRecording ? stopRecording : startRecording}
+                    disabled={isLoading}
+                    className={`p-4 rounded-full text-white font-medium mb-4 flex items-center justify-center ${isRecording ? 'bg-red-500 pulse-recording' : 'bg-indigo-600 hover:bg-indigo-700'} ${isLoading ? 'opacity-50' : ''}`}
+                    style={{ width: '80px', height: '80px' }}
+                >
+                    {isLoading ? (
+                        <svg className="animate-spin h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    ) : isRecording ? (
+                        <i className="fas fa-stop text-2xl"></i>
+                    ) : (
+                        <i className="fas fa-microphone text-2xl"></i>
+                    )}
+                </button>
+                
+                <p className="text-gray-600 mb-2">
+                    {isRecording ? "Recording in progress..." : isLoading ? "Processing your request..." : "Start Recording"}
+                </p>
+                
+                {transcript && (
+                    <div className="w-full mt-4 p-4 bg-gray-100 rounded-md">
+                        <p className="text-gray-700">{transcript}</p>
+                    </div>
+                )}
+                
+                {showTextInput && (
+                    <div className="w-full mt-4">
+                        <p className="text-red-500 mb-2">❌ Voice recognition failed. Please type your command:</p>
+                        <div className="flex">
+                            <input
+                                type="text"
+                                value={textInput}
+                                onChange={(e) => setTextInput(e.target.value)}
+                                placeholder="e.g., Meeting with John tomorrow at 3 PM"
+                                className="flex-1 p-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                            <button
+                                onClick={handleTextSubmit}
+                                className="bg-indigo-600 text-white px-4 py-2 rounded-r-md hover:bg-indigo-700"
+                            >
+                                Submit
+                            </button>
+                        </div>
+                    </div>
+                )}
+                
+                <div className="mt-6 text-sm text-gray-500">
+                    <p className="font-medium">💡 Try saying clearly:</p>
+                    <ul className="list-disc list-inside mt-1">
+                        <li>"Meeting with John next Friday at 3 PM for 1 hour"</li>
+                        <li>"Lunch with team tomorrow at 12:30 for 45 minutes"</li>
+                        <li>"Interview on September 20th at 2 PM"</li>
+                    </ul>
+                    <p className="mt-2">💡 Tip: Use a headset microphone and speak clearly in a quiet environment for best results.</p>
+                </div>
             </div>
-          </div>
-        )}
-
-        <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-          <h3 className="font-semibold text-blue-800 mb-2">💡 Try saying:</h3>
-          <ul className="text-sm text-blue-600 space-y-1">
-            <li>"Meeting with John next Friday at 3 PM for 1 hour"</li>
-            <li>"Lunch with team tomorrow at 12:30 for 45 minutes"</li>
-            <li>"Interview on September 20th at 2 PM"</li>
-            <li>"Doctor appointment Wednesday at 10 AM for 30 minutes"</li>
-          </ul>
         </div>
+    );
+};
 
-        <div className="p-3 bg-gray-100 rounded-lg text-xs text-gray-500">
-          <strong>Backend:</strong> http://localhost:8000
-          <br />
-          <strong>Endpoints:</strong> /process-audio, /process-text, /create-event
-        </div>
-      </div>
-    </div>
-  )
-}
-
-export default VoiceRecorder
+export default VoiceRecorder;

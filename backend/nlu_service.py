@@ -18,6 +18,8 @@ def validate_and_correct_dates(event_data: Dict[str, Any], utterance: str = "") 
     if "start" not in event_data or not event_data["start"]:
         return event_data
     
+    event_data["attendees"] = []
+    
     try:
         start_str = event_data.get("start", "")
         current_year = datetime.now().year
@@ -67,7 +69,7 @@ def validate_and_correct_dates(event_data: Dict[str, Any], utterance: str = "") 
 def extract_event_fallback(utterance: str) -> Dict[str, Any]:
     """Improved fallback function with proper date parsing for specific dates"""
     utterance_lower = utterance.lower()
-    result = {"intent": "CreateEvent", "title": "Meeting", "timezone": "America/New_York"}
+    result = {"intent": "CreateEvent", "title": "Meeting", "timezone": "America/New_York", "attendees": []}
     
     today = datetime.now()
     current_year = today.year
@@ -179,9 +181,10 @@ def extract_event_fallback(utterance: str) -> Dict[str, Any]:
         result["title"] = " ".join(words[:4])  # Use first 4 meaningful words as title
     
     # Parse attendees
-    email_matches = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', utterance)
-    if email_matches:
-        result["attendees"] = email_matches
+    #email_matches = re.findall(r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b', utterance)
+    #if email_matches:
+    #    result["attendees"] = email_matches
+    result["attendees"] = []
     
     return result
 
