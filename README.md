@@ -4,6 +4,11 @@ Bridge the gap between thought and action. Intelligent VoiceCalendarAI is a cutt
 ## 🚀 Core Innovation
 This is more than a simple voice-to-text tool. It's an intelligent parsing engine that understands natural language, extracting intent, dates, times, and event descriptions to create accurate and actionable calendar entries seamlessly.
 
+## Demo Video
+
+[▶️ Watch the Demo](https://youtu.be/https://drive.google.com/file/d/1iCuwpQCWXaDjmrE9vsddA6AK89Uz15zN/view?usp=sharing)
+
+
 ## ✨ Features
 **Natural Language Command:** Say "Schedule a meeting with Alex next Monday at 3pm to discuss the quarterly project report" and let the AI handle the rest.
 
@@ -134,3 +139,4 @@ We welcome contributions! To contribute to Intelligent VoiceCalendarAI:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
