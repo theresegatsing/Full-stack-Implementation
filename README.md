@@ -6,7 +6,7 @@ This is more than a simple voice-to-text tool. It's an intelligent parsing engin
 
 ## Demo Video
 
-[▶️ Watch the Demo](https://youtu.be/https://drive.google.com/file/d/1iCuwpQCWXaDjmrE9vsddA6AK89Uz15zN/view?usp=sharing)
+[▶️ Watch the Demo](https://drive.google.com/file/d/1iCuwpQCWXaDjmrE9vsddA6AK89Uz15zN/view?usp=sharing)
 
 
 ## ✨ Features
@@ -139,4 +139,5 @@ We welcome contributions! To contribute to Intelligent VoiceCalendarAI:
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 
